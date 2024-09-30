@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.9.4/Chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
+    <style>
+        body {
+            background-color: #ecf0f1;
+            font-family: 'Roboto', sans-serif;
+            color: #34495e;
+            margin: 0;
+            padding: 0;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 1600px;
+            margin: 40px auto;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+            background-color: #fff;
+            padding: 30px;
+        }
+
+        h1 {
+            color: #2980b9;
+            font-weight: 400;
+            letter-spacing: 1px;
+            font-size: 2.5em;
+            margin-bottom: 20px;
+        }
+
+        .date-picker {
+            margin-bottom: 40px;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        label {
+            font-size: 1.2em;
+            color: #7f8c8d;
+        }
+
+        input[type="date"] {
+            padding: 10px;
+            border: 1px solid #bdc3c7;
+            border-radius: 5px;
+            font-size: 1em;
+            color: #333;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 1em;
+            background-color: #2980b9;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #3498db;
+        }
+
+        .charts-container {
+            display: flex;
+            flex-direction: row; /* ค่าเริ่มต้นจัดเรียงแบบซ้าย-ขวา */
+            margin-top: 20px;
+            transition: all 0.3s ease;
+        }
+
+        .chart-container {
+            flex: 1;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            background-color: #ffffff;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        canvas {
+            width: 100% !important;
+            height: 500px !important; /* ปรับขนาดกราฟให้สูงขึ้น */
+            background-color: rgba(240, 248, 255, 0.3);
+        }
+
+        #latestTemperature, #latestFaceCount {
+            text-align: right;
+            font-size: 1.2em;
+            color: #e74c3c;
+            margin-top: 10px;
+        }
+
+        .chart-type-buttons, .layout-buttons {
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        /* Media Queries สำหรับ Responsive Design */
+        @media screen and (max-width: 768px) {
+            .charts-container {
+                flex-direction: column; /* เรียงแนวตั้งเมื่อจอเล็ก */
+            }
+
+            canvas {
+                height: 300px !important; /* ปรับขนาดกราฟให้เล็กลงสำหรับมือถือ */
+            }
+
+            button {
+                width: 100%; /* ปุ่มจะขยายเต็มความกว้างหน้าจอ */
+                margin-top: 10px;
+            }
+        }
+    </style>
+    <title>Graph - Data from arduino</title>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Data from Arduino</h1>
+
+        <div class="date-picker">
+            <label for="startDate">Start Date:</label>
+            <input type="date" id="startDate">
+            <label for="endDate">End Date:</label>
+            <input type="date" id="endDate">
+            <button id="filterData">Filter Data</button>
+        </div>
+
+        <div class="chart-type-buttons">
+            <label>Change Chart Type:</label>
+            <button class="changeChartType" data-type="line">Line</button>
+            <button class="changeChartType" data-type="bar">Bar</button>
+        </div>
+
+        <div class="layout-buttons">
+            <label>Change Layout:</label>
+            <button class="changeLayout" data-layout="row">Side by Side</button>
+            <button class="changeLayout" data-layout="column">Stacked</button>
+        </div>
+
+        <div class="charts-container" id="chartsContainer">
+            <div class="chart-container" id="chartContainer1">
+                <h2>Temperature Chart</h2>
+                <canvas id="chart1"></canvas>
+                <div id="latestTemperature"></div>
+            </div>
+
+            <div class="chart-container" id="chartContainer2">
+                <h2>Face Counting Chart</h2>
+                <canvas id="chart2"></canvas>
+                <div id="latestFaceCount"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        $(document).ready(function() {
+            var chart1, chart2;
+            var currentType = localStorage.getItem('chartType') || 'line';
+            var currentLayout = localStorage.getItem('layout') || 'row';
+
+            function getData(startDate, endDate) {
+                var url = "https://api.thingspeak.com/channels/2659371/feeds.json?api_key=ATFRE4FW3NH7WI9R";
+
+                $.getJSON(url, function(data) {
+                    var field1Values = [];
+                    var field2Values = [];
+                    var timestamps = [];
+                    var isSameDay = startDate && endDate && startDate.isSame(endDate, 'day');
+
+                    $.each(data.feeds, function(index, feed) {
+                        var feedDate = moment(feed.created_at);
+
+                        if ((!startDate || feedDate.isSameOrAfter(startDate)) && (!endDate || feedDate.isSameOrBefore(endDate))) {
+                            field1Values.push(feed.field1);
+                            field2Values.push(feed.field2);
+
+                            $('#latestTemperature').text('Latest Temperature: ' + field1Values[field1Values.length - 1] + ' °C');
+                            $('#latestFaceCount').text('Latest Face Count: ' + field2Values[field2Values.length - 1]);
+
+                            timestamps.push(isSameDay ? feedDate.format('HH:mm') : feedDate.format('MMM D, YYYY HH:mm'));
+                        }
+                    });
+
+                    if (chart1) {
+                        chart1.destroy();
+                    }
+                    var ctx1 = document.getElementById('chart1').getContext('2d');
+                    chart1 = new Chart(ctx1, {
+                        type: currentType,
+                        data: {
+                            labels: timestamps,
+                            datasets: [{
+                                label: 'Temperature',
+                                data: field1Values,
+                                borderColor: '#2ecc71',
+                                backgroundColor: 'rgba(46, 204, 113, 0.1)',
+                                borderWidth: 2,
+                                fill: true
+                            }]
+                        },
+                        options: {
+                            scales: {
+                                xAxes: [{ ticks: { maxRotation: 90, minRotation: 90 } }],
+                                yAxes: [{ ticks: { beginAtZero: true } }]
+                            },
+                            elements: { line: { tension: 0.4 } }
+                        }
+                    });
+
+                    if (chart2) {
+                        chart2.destroy();
+                    }
+                    var ctx2 = document.getElementById('chart2').getContext('2d');
+                    chart2 = new Chart(ctx2, {
+                        type: currentType,
+                        data: {
+                            labels: timestamps,
+                            datasets: [{
+                                label: 'Face Counting',
+                                data: field2Values,
+                                borderColor: '#3498db',
+                                backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                                borderWidth: 2,
+                                fill: true
+                            }]
+                        },
+                        options: {
+                            scales: {
+                                xAxes: [{ ticks: { maxRotation: 90, minRotation: 90 } }],
+                                yAxes: [{ ticks: { beginAtZero: true } }]
+                            }
+                        }
+                    });
+                });
+            }
+
+            $('.changeChartType').click(function() {
+                currentType = $(this).data('type');
+                localStorage.setItem('chartType', currentType);
+                getData(moment($('#startDate').val()).startOf('day'), moment($('#endDate').val()).endOf('day'));
+            });
+
+            $('.changeLayout').click(function() {
+                var layout = $(this).data('layout');
+                currentLayout = layout;
+                localStorage.setItem('layout', layout);
+                $('.charts-container').css('flex-direction', layout); // เปลี่ยนรูปแบบการจัดวางกราฟ
+                location.reload();
+            });
+
+            function setDateInputs() {
+                var startDate = localStorage.getItem('startDate');
+                var endDate = localStorage.getItem('endDate');
+
+                if (startDate) {
+                    $('#startDate').val(startDate);
+                }
+                if (endDate) {
+                    $('#endDate').val(endDate);
+                }
+            }
+
+            setDateInputs();
+            $('.charts-container').css('flex-direction', currentLayout); // ตั้งค่ารูปแบบการจัดวางเมื่อโหลดหน้าใหม่
+            getData(moment($('#startDate').val()).startOf('day'), moment($('#endDate').val()).endOf('day'));
+
+            $('#filterData').click(function() {
+                var startDate = $('#startDate').val() ? moment($('#startDate').val()).startOf('day') : null;
+                var endDate = $('#endDate').val() ? moment($('#endDate').val()).endOf('day') : null;
+
+                localStorage.setItem('startDate', $('#startDate').val());
+                localStorage.setItem('endDate', $('#endDate').val());
+
+                getData(startDate, endDate);
+            });
+
+            setInterval(function() {
+                location.reload();
+            }, 15000);
+        });
+    </script>
+</body>
+</html>
